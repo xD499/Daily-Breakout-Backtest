@@ -1,18 +1,13 @@
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-from backtesting.test import EURUSD
-from itertools import zip_longest
 import pandas as pd
 
-pair = EURUSD.reset_index().rename(columns={'index': 'Date'})[::-1]
+pair = pd.read_csv("Historical Klines/BTCUSDT 1D.csv")[::-1].reset_index(drop=True)
+pair.drop(columns=pair.columns.difference(['Date', 'Open', 'High', 'Low', 'Close']), inplace=True)
 
-o = pair['Open']
-h = pair['High']
-l = pair['Low']
-c = pair['Close']
-d = pair['Date']
-
-mintick = 0.00001
+open_price = pd.to_numeric(pair['Open'])
+high_price = pd.to_numeric(pair['High'])
+low_price = pd.to_numeric(pair['Low'])
+close_price = pd.to_numeric(pair['Close'])
+date = pd.to_datetime(pair['Date'], unit='ms')
 
 
 def input_float(msg, minval, maxval):
@@ -36,24 +31,29 @@ def input_float(msg, minval, maxval):
     return inp
 
 
-entry_offset = input_float("Enter the offset for entries (Pips): ", 1, 3)
-stop_offset = input_float("Enter a stop size (Pips): ", 1, 5)
-target_offset = input_float("Enter a target size (Pips): ", 1, 10)
+entry_offset = input_float("Enter the offset for entries (Percent): ", 0.1, 100) / 100
+stop_offset = input_float("Enter a stop size (Percent): ", 0.1, 100) / 100
+target_offset = input_float("Enter a target size (Percent): ", 0.1, 100) / 100
 
-long_entries = h + (entry_offset * 10 * mintick)
-long_stops = long_entries - (stop_offset * 10 * mintick)
-long_targets = long_entries + (target_offset * 10 * mintick)
+long_entries = round(high_price * (entry_offset + 1), 2)
+long_stops = round(long_entries * (1 - stop_offset), 2)
+long_targets = round(long_entries + (target_offset + 1), 2)
 
-short_entries = l - (entry_offset * 10 * mintick)
-short_stops = short_entries + (stop_offset * 10 * mintick)
-short_targets = short_entries - (target_offset * 10 * mintick)
+short_entries = round(low_price * (1 - entry_offset), 2)
+short_stops = round(short_entries * (stop_offset + 1), 2)
+short_targets = round(short_entries * (1 - target_offset), 2)
 
-previous_long_entry = None
-previous_short_entry = None
-
-for i in range(1, len(c)):
-    if h[i] > long_entries[i - 1]:
-        print(f"High: {h[i]}  Date of high: {d[i]} Entry: {long_entries[i - 1]} High that based Entry: {h[i - 1]} Date of entry: {d[i - 1]} ✓")
+for i in range(1, len(close_price) - 1):
+    if high_price[i] > long_entries[i + 1]:
+        print(f"High: {high_price[i]}  "
+              f"Date of high: {date[i]} "
+              f"Entry: {long_entries[i + 1]} "
+              f"High that based Entry: {high_price[i + 1]} "
+              f"Date of entry: {date[i + 1]} ✓")
     else:
-        print(f"High: {h[i]}  Date of high: {d[i]} Entry: {long_entries[i - 1]} High that based Entry: {h[i - 1]} Date of entry: {d[i - 1]} X")
+        print(f"High: {high_price[i]}  "
+              f"Date of high: {date[i]} "
+              f"Entry: {long_entries[i + 1]} "
+              f"High that based Entry: {high_price[i + 1]} "
+              f"Date of entry: {date[i + 1]} X")
 
