@@ -1,8 +1,6 @@
 import pandas as pd
 
 
-
-
 def input_float(msg, minval, maxval):
     while True:
         inp = input(msg)
@@ -20,22 +18,54 @@ def input_float(msg, minval, maxval):
             continue
 
         break
-
     return inp
 
 
+def isWin(row):
+    if row['Low'] <= row['Stop Price']:
+        print("Trade Stopped")
+        print(f"Stop Date: {row['Date']}")
+        print(f"Stop Price: {row['Stop Price']}")
+        print("")
+        return True
+
+    if row['High'] >= row['Take Profit Price']:
+        print("Trade Profited!")
+        print(f"Take Profit Date: {row['Date']}")
+        print(f"Take Profit Price: {row['Take Profit Price']}")
+        print("")
+        return True
+
+    return False
+
+
+def process_remaining_rows(data, start_index):
+    for index, row in data.iterrows():
+        if index <= start_index:
+            continue
+
+        if isWin(row):
+            break
+
+
 def process_minutes(minute_data):
-    filtered_minutes_ohlcd = zip(minute_data['Open'], minute_data['High'],
-                                 minute_data['Low'], minute_data['Close'],
-                                 minute_data['Date'], minute_data['Entry Price'],
-                                 minute_data['Stop Price'], minute_data['Take Profit Price'])
-    for minute_open, minute_high, minute_low, minute_close, minute_date, entry, stop, take_profit in filtered_minutes_ohlcd:
+    minute_data_zip = zip(
+        minute_data.index, minute_data['Open'], minute_data['High'],
+        minute_data['Low'], minute_data['Close'], minute_data['Date'],
+        minute_data['Entry Price'], minute_data['Stop Price'],
+        minute_data['Take Profit Price'], minute_data['Direction']
+    )
+
+    for minute_index, minute_open, minute_high, minute_low, minute_close, minute_date, entry, stop, take_profit, direction in minute_data_zip:
         if minute_high >= entry:
+            entry_index = minute_index
+            print(direction)
             print(f"Entry Date: {minute_date}")
             print(f"Entry Price: {entry}")
             print(f"Stop Price: {stop}")
             print(f"TP Price: {take_profit}")
             print("")
+            process_remaining_rows(minute_data, entry_index)
             break
 
 
@@ -56,7 +86,7 @@ def main():
 
     long_entries = round(high_price * (entry_offset + 1), 2)
     long_stops = round(long_entries * (1 - stop_offset), 2)
-    long_targets = round(long_entries + (target_offset + 1), 2)
+    long_targets = round(long_entries * (target_offset + 1), 2)
 
     short_entries = round(low_price * (1 - entry_offset), 2)
     short_stops = round(short_entries * (stop_offset + 1), 2)
@@ -64,7 +94,8 @@ def main():
 
     confirmed_entries = pd.DataFrame(columns=['Date of Long Entry', 'Long Entry State',
                                               'Long Entry Price', 'Long Stop Price', 'Long Take Profit Price'
-                                              'Date of Short Entry', 'Short Entry State',
+                                                                                     'Date of Short Entry',
+                                              'Short Entry State',
                                               'Short Entry Price', 'Short Stop Price', 'Short Take Profit Price']
                                      )
 
@@ -131,6 +162,7 @@ def main():
         filtered_minutes['Entry Price'] = entry_price
         filtered_minutes['Stop Price'] = stop_price
         filtered_minutes['Take Profit Price'] = take_profit_price
+        filtered_minutes['Direction'] = "Long"
         process_minutes(filtered_minutes)
 
 
