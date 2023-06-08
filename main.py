@@ -1,77 +1,13 @@
 import pandas as pd
-
-
-def input_float(msg, minval, maxval):
-    while True:
-        inp = input(msg)
-        try:
-            inp = float(inp)
-        except ValueError:
-            print("! Please enter a number.")
-            continue
-
-        if inp < minval:
-            print(f"! Please enter a number >= {minval}")
-            continue
-        elif inp > maxval:
-            print(f"! Please enter a number <= {maxval}")
-            continue
-
-        break
-    return inp
-
-
-def isWin(row):
-    if row['Low'] <= row['Stop Price']:
-        print("Trade Stopped")
-        print(f"Stop Date: {row['Date']}")
-        print(f"Stop Price: {row['Stop Price']}")
-        print("")
-        return True
-
-    if row['High'] >= row['Take Profit Price']:
-        print("Trade Profited!")
-        print(f"Take Profit Date: {row['Date']}")
-        print(f"Take Profit Price: {row['Take Profit Price']}")
-        print("")
-        return True
-
-    return False
-
-
-def process_remaining_rows(data, start_index):
-    for index, row in data.iterrows():
-        if index <= start_index:
-            continue
-
-        if isWin(row):
-            break
-
-
-def process_minutes(minute_data):
-    minute_data_zip = zip(
-        minute_data.index, minute_data['Open'], minute_data['High'],
-        minute_data['Low'], minute_data['Close'], minute_data['Date'],
-        minute_data['Entry Price'], minute_data['Stop Price'],
-        minute_data['Take Profit Price'], minute_data['Direction']
-    )
-
-    for minute_index, minute_open, minute_high, minute_low, minute_close, minute_date, entry, stop, take_profit, direction in minute_data_zip:
-        if minute_high >= entry:
-            entry_index = minute_index
-            print(direction)
-            print(f"Entry Date: {minute_date}")
-            print(f"Entry Price: {entry}")
-            print(f"Stop Price: {stop}")
-            print(f"TP Price: {take_profit}")
-            print("")
-            process_remaining_rows(minute_data, entry_index)
-            break
+from backtest_utilities import load_data, input_float, calculate_trade_values, process_minutes
 
 
 def main():
-    pair_daily = pd.read_csv("Historical Klines/BTCUSDT 1D.csv")[::-1].reset_index(drop=True)
-    pair_minute = pd.read_csv("Historical Klines/BTCUSDT 1M.csv", index_col=0)[::-1].reset_index(drop=True)
+    pair_daily = load_data("Historical Klines/BTCUSDT 1D.csv")
+    pair_minute = load_data("Historical Klines/BTCUSDT 1M.csv")
+
+    if pair_daily is None or pair_minute is None:
+        return
     pair_daily.drop(columns=pair_daily.columns.difference(['Date', 'Open', 'High', 'Low', 'Close']), inplace=True)
 
     open_price = pd.to_numeric(pair_daily['Open'])
@@ -84,13 +20,8 @@ def main():
     stop_offset = input_float("Enter a stop size (Percent): ", 0.1, 100) / 100
     target_offset = input_float("Enter a target size (Percent): ", 0.1, 100) / 100
 
-    long_entries = round(high_price * (entry_offset + 1), 2)
-    long_stops = round(long_entries * (1 - stop_offset), 2)
-    long_targets = round(long_entries * (target_offset + 1), 2)
-
-    short_entries = round(low_price * (1 - entry_offset), 2)
-    short_stops = round(short_entries * (stop_offset + 1), 2)
-    short_targets = round(short_entries * (1 - target_offset), 2)
+    long_entries, long_stops, long_targets = calculate_trade_values(high_price, entry_offset, stop_offset, target_offset, "Long")
+    short_entries, short_stops, short_targets = calculate_trade_values(low_price, entry_offset, stop_offset, target_offset, "Short")
 
     confirmed_entries = pd.DataFrame(columns=['Date of Long Entry', 'Long Entry State',
                                               'Long Entry Price', 'Long Stop Price', 'Long Take Profit Price'
@@ -100,51 +31,22 @@ def main():
                                      )
 
     for i in range(1, len(close_price) - 1):
-        if high_price[i] > long_entries[i + 1]:
-            confirmed_entries.loc[i, 'Date of Long Entry'] = pd.to_datetime(date[i])
-            confirmed_entries.loc[i, 'Long Entry State'] = True
-            confirmed_entries.loc[i, 'Long Entry Price'] = long_entries[i + 1]
-            confirmed_entries.loc[i, 'Long Stop Price'] = long_stops[i + 1]
-            confirmed_entries.loc[i, 'Long Take Profit Price'] = long_targets[i + 1]
-        else:
-            confirmed_entries.loc[i, 'Date of Long Entry'] = pd.to_datetime(date[i])
-            confirmed_entries.loc[i, 'Long Entry State'] = False
-            confirmed_entries.loc[i, 'Long Entry Price'] = long_entries[i + 1]
-            confirmed_entries.loc[i, 'Long Stop Price'] = None
-            confirmed_entries.loc[i, 'Long Take Profit Price'] = None
+        confirmed_entries.loc[i, 'Date of Long Entry'] = pd.to_datetime(date[i])
+        confirmed_entries.loc[i, 'Long Entry Price'] = long_entries[i + 1]
+        confirmed_entries.loc[i, 'Long Entry State'] = high_price[i] > long_entries[i + 1]
+        confirmed_entries.loc[i, 'Long Stop Price'] = long_stops[i + 1] if high_price[i] > long_entries[i + 1] else None
+        confirmed_entries.loc[i, 'Long Take Profit Price'] = long_targets[i + 1] if high_price[i] > long_entries[i + 1] else None
 
-        if low_price[i] < short_entries[i + 1]:
-            confirmed_entries.loc[i, 'Date of Short Entry'] = pd.to_datetime(date[i])
-            confirmed_entries.loc[i, 'Short Entry State'] = True
-            confirmed_entries.loc[i, 'Short Entry Price'] = short_entries[i + 1]
-            confirmed_entries.loc[i, 'Short Stop Price'] = short_stops[i + 1]
-            confirmed_entries.loc[i, 'Short Take Profit Price'] = short_targets[i + 1]
-        else:
-            confirmed_entries.loc[i, 'Date of Short Entry'] = pd.to_datetime(date[i])
-            confirmed_entries.loc[i, 'Short Entry State'] = False
-            confirmed_entries.loc[i, 'Short Entry Price'] = short_entries[i + 1]
-            confirmed_entries.loc[i, 'Short Stop Price'] = None
-            confirmed_entries.loc[i, 'Short Take Profit Price'] = None
+        confirmed_entries.loc[i, 'Date of Short Entry'] = pd.to_datetime(date[i])
+        confirmed_entries.loc[i, 'Short Entry Price'] = short_entries[i + 1]
+        confirmed_entries.loc[i, 'Short Entry State'] = low_price[i] < short_entries[i + 1]
+        confirmed_entries.loc[i, 'Short Stop Price'] = short_stops[i + 1] if low_price[i] < short_entries[i + 1] else None
+        confirmed_entries.loc[i, 'Short Take Profit Price'] = short_targets[i + 1] if low_price[i] < short_entries[i + 1] else None
 
-    confirmed_long_dates = pd.to_datetime(
-        confirmed_entries[confirmed_entries['Long Entry State']]
-        ['Date of Long Entry']
-    ).reset_index(drop=True)
-
-    confirmed_long_prices = pd.to_numeric(
-        confirmed_entries[confirmed_entries['Long Entry State']]
-        ['Long Entry Price']
-    ).reset_index(drop=True)
-
-    confirmed_long_stop_prices = pd.to_numeric(
-        confirmed_entries[confirmed_entries['Long Entry State']]
-        ['Long Stop Price']
-    ).reset_index(drop=True)
-
-    confirmed_long_take_profit_prices = pd.to_numeric(
-        confirmed_entries[confirmed_entries['Long Entry State']]
-        ['Long Take Profit Price']
-    ).reset_index(drop=True)
+    confirmed_long_dates = pd.to_datetime(confirmed_entries[confirmed_entries['Long Entry State']]['Date of Long Entry']).reset_index(drop=True)
+    confirmed_long_prices = pd.to_numeric(confirmed_entries[confirmed_entries['Long Entry State']]['Long Entry Price']).reset_index(drop=True)
+    confirmed_long_stop_prices = pd.to_numeric(confirmed_entries[confirmed_entries['Long Entry State']]['Long Stop Price']).reset_index(drop=True)
+    confirmed_long_take_profit_prices = pd.to_numeric(confirmed_entries[confirmed_entries['Long Entry State']]['Long Take Profit Price']).reset_index(drop=True)
 
     confirmed_long_strdates = pd.DataFrame({'Date': confirmed_long_dates})
     confirmed_long_strdates['YMD'] = confirmed_long_strdates['Date'].dt.strftime('%Y-%m-%d')
